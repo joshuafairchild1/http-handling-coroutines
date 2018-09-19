@@ -9,17 +9,11 @@ import java.util.*
 class ApplicationServer(private val port: Int) {
   private val http = RawHttp()
   private var server: TcpRawHttpServer? = null
+  private val threadsUsed = mutableSetOf<String>()
 
   fun initialize(handleRequestsAsync: Boolean = true): ApplicationServer {
     server = TcpRawHttpServer(port)
-    server!!.start {
-      // runBlocking is used here to "bridge the gap" between the blocking function
-      // that `start` expects will be passed, and the suspended execution of `handleRequest`
-      runBlocking {
-        val response = handleRequest(it, handleRequestsAsync)
-        Optional.ofNullable(response)
-      }
-    }
+    server!!.start { handleRequest(it, handleRequestsAsync) }
     return this
   }
 
@@ -27,17 +21,31 @@ class ApplicationServer(private val port: Int) {
     server?.stop()
   }
 
-  private suspend fun handleRequest(
-    request: RawHttpRequest,
-    async: Boolean
-  ): RawHttpResponse<*> = withContext(DefaultDispatcher) {
-    if (async) respondAsync(request) else respondWithDocument(request)
+  fun memoryUsage(): Long {
+    val runtime = Runtime.getRuntime()
+    val freeSize = runtime.freeMemory()
+    val totalSize = runtime.totalMemory()
+    return totalSize - freeSize
   }
 
-  private suspend fun respondAsync(request: RawHttpRequest) =
-    withContext(DefaultDispatcher) { respondWithDocument(request) }
+  private fun handleRequest(request: RawHttpRequest, async: Boolean): Optional<RawHttpResponse<*>> {
+    return try {
+      if (async) {
+        runBlocking(CommonPool) { respondAsync(request) }
+      } else respond(request)
+    } catch (ex: Exception) {
+      ex.printStackTrace()
+      return Optional.ofNullable(null)
+    }
+  }
 
-  private fun respondWithDocument(request: RawHttpRequest): RawHttpResponse<Void> =
-    http.parseResponse("HTTP/1.1 200 OK\nContent-Type: text/html")
-      .withBody(StringBody("<!DOCTYPE html><html><pre>${request.headers}</pre></html>"))
+  private suspend fun respondAsync(request: RawHttpRequest): Optional<RawHttpResponse<*>> =
+    withContext(DefaultDispatcher) { respond(request) }
+
+  private fun respond(request: RawHttpRequest): Optional<RawHttpResponse<*>> {
+    threadsUsed.add(Thread.currentThread().name)
+//    println("handling request on thread ${Thread.currentThread().name}")
+    return Optional.ofNullable(http.parseResponse("HTTP/1.1 200 OK\nContent-Type: text/html")
+      .withBody(StringBody("<!DOCTYPE html><html><pre>${request.headers}</pre></html>")))
+  }
 }

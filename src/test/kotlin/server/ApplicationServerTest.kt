@@ -13,10 +13,19 @@ internal class ApplicationServerTest {
 
   private val syncRequestPort = 4000
   private val asyncRequestPort = 3000
+  private val requestCount = 500
+
   private val httpClient = TcpRawHttpClient()
   private val http = RawHttp()
   private var syncServer: ApplicationServer? = null
   private var asyncServer: ApplicationServer? = null
+
+  private fun makeRequests(count: Int, port: Int) {
+    repeat(count) {
+      val request = http.parseRequest("GET http://localhost:$port")
+      httpClient.send(request).eagerly()
+    }
+  }
 
   @BeforeEach
   fun setup() {
@@ -39,25 +48,32 @@ internal class ApplicationServerTest {
   }
 
   @Test
-  fun `handles requests synchronously and asynchronously (benchmark)`() {
-    val requestCount = 1000
+  fun `handles requests synchronously and asynchronously - benchmark`() {
     val startA = System.currentTimeMillis()
-    repeat(requestCount) {
-      val request = http.parseRequest("GET http://localhost:$syncRequestPort")
-      httpClient.send(request).eagerly()
-    }
+    makeRequests(requestCount, syncRequestPort)
     val endA = System.currentTimeMillis()
 
-    println("took ${endA - startA}ms to handle $requestCount requests synchronously")
+    println("took ${endA - startA} ms to handle $requestCount requests synchronously")
 
     val startB = System.currentTimeMillis()
-    repeat(requestCount) {
-      val request = http.parseRequest("GET http://localhost:$asyncRequestPort")
-      httpClient.send(request).eagerly()
-    }
+    makeRequests(requestCount, asyncRequestPort)
     val endB = System.currentTimeMillis()
 
-    println("took ${endB - startB}ms to handle $requestCount requests asynchronously")
+    println("took ${endB - startB} ms to handle $requestCount requests asynchronously")
+  }
+
+  @Test
+  fun `memory usage - synchronous`() {
+    makeRequests(requestCount, syncRequestPort)
+    val usageKb = syncServer!!.memoryUsage() / 1000
+    println("Memory used after handling $requestCount requests synchronously: $usageKb kb")
+  }
+
+  @Test
+  fun `memory usage - asynchronous`() {
+    makeRequests(requestCount, asyncRequestPort)
+    val usageKb = asyncServer!!.memoryUsage() / 1000
+    println("Memory used after handling $requestCount requests asynchronously: $usageKb kb")
   }
 
 }
