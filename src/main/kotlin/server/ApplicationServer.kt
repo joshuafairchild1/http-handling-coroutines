@@ -13,6 +13,8 @@ class ApplicationServer(private val port: Int) {
   fun initialize(handleRequestsAsync: Boolean = true): ApplicationServer {
     server = TcpRawHttpServer(port)
     server!!.start {
+      // runBlocking is used here to "bridge the gap" between the blocking function
+      // that `start` expects will be passed, and the suspended execution of `handleRequest`
       runBlocking {
         val response = handleRequest(it, handleRequestsAsync)
         Optional.ofNullable(response)
@@ -29,13 +31,11 @@ class ApplicationServer(private val port: Int) {
     request: RawHttpRequest,
     async: Boolean
   ): RawHttpResponse<*> = withContext(DefaultDispatcher) {
-    if (async) respondAsync(request) else respond(request)
+    if (async) respondAsync(request) else respondWithDocument(request)
   }
 
   private suspend fun respondAsync(request: RawHttpRequest) =
     withContext(DefaultDispatcher) { respondWithDocument(request) }
-
-  private fun respond(request: RawHttpRequest) = respondWithDocument(request)
 
   private fun respondWithDocument(request: RawHttpRequest): RawHttpResponse<Void> =
     http.parseResponse("HTTP/1.1 200 OK\nContent-Type: text/html")
